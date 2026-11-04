@@ -1,0 +1,375 @@
+{
+  "name": "Agent IA logistique VRP",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "n1",
+      "name": "Démarrage manuel",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "n2",
+      "name": "Chaque jour à 06h00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "api_url",
+              "value": "http://host.docker.internal:5000",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "vehicles",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "a3",
+              "name": "capacity",
+              "value": 50,
+              "type": "number"
+            },
+            {
+              "id": "a4",
+              "name": "w1",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "a5",
+              "name": "w2",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "a6",
+              "name": "w3",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "a7",
+              "name": "strength",
+              "value": 0.01,
+              "type": "number"
+            },
+            {
+              "id": "a8",
+              "name": "time_limit",
+              "value": 10,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n3",
+      "name": "Paramètres du problème",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        290
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api_url }}/solve",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({vehicles: $json.vehicles, capacity: $json.capacity, weights: [$json.w1, $json.w2, $json.w3], strength: $json.strength, time_limit: $json.time_limit, time_windows: true}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "n4",
+      "name": "Lancer le solveur VRP (Python/OR-Tools)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        290
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nif (!r.solution_trouvee) {\n  throw new Error('Aucune solution trouvée : ' + (r.message || 'problème infaisable'));\n}\nconst rows = r.vehicules.map(v =>\n  `<tr><td>Véhicule ${v.vehicule}</td><td>${v.tournee.join(' → ')}</td><td>${v.distance} min</td><td>${v.charge}/${v.capacite}</td><td>${Math.round(v.depart)} → ${Math.round(v.retour)}</td></tr>`\n).join('');\nconst c = r.controles;\nconst yn = b => (b ? '✅' : '❌');\nconst html = `\n<h2>Rapport de tournées — VPR Logistics</h2>\n<p><b>Distance totale :</b> ${r.distance_totale} min &nbsp;|&nbsp; <b>Statut solveur :</b> ${r.statut}</p>\n<table border=\"1\" cellpadding=\"6\" style=\"border-collapse:collapse\">\n<tr><th>Véhicule</th><th>Tournée</th><th>Distance</th><th>Charge</th><th>Départ → Retour (min)</th></tr>\n${rows}\n</table>\n<h3>Contrôle des contraintes</h3>\n<ul>\n<li>${yn(c.chaque_client_une_fois)} Chaque client visité une seule fois</li>\n<li>${yn(c.debut_fin_depot)} Tournées début/fin au dépôt</li>\n<li>${yn(c.capacite_respectee)} Capacité respectée</li>\n<li>${yn(c.fenetres_respectees)} Fenêtres horaires respectées</li>\n<li>${yn(c.tous_clients_servis)} Tous les clients servis</li>\n</ul>\n<p>La carte des tournées est jointe à ce message.</p>`;\nconst subject = (r.toutes_contraintes_ok ? '[OK] ' : '[ALERTE] ') +\n  'Tournées VRP optimisées — distance totale ' + r.distance_totale + ' min';\nconst bin = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(r, null, 2), 'utf8'), 'resultat_vrp.json', 'application/json');\nreturn [{ json: { ok: r.toutes_contraintes_ok, distance_totale: r.distance_totale, subject, html, carte_url: r.carte_url }, binary: { resultat: bin } }];"
+      },
+      "id": "n5",
+      "name": "Construire le rapport",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        290
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.carte_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "carte"
+            }
+          }
+        }
+      },
+      "id": "n6",
+      "name": "Télécharger la carte des tournées",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/node/vrp_output/resultat_vrp.json",
+        "dataPropertyName": "resultat",
+        "options": {}
+      },
+      "id": "n7",
+      "name": "Sauvegarder le JSON des résultats",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/node/vrp_output/carte_tournees.png",
+        "dataPropertyName": "carte",
+        "options": {}
+      },
+      "id": "n8",
+      "name": "Sauvegarder la carte (PNG)",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Construire le rapport').item.json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n9",
+      "name": "Contraintes respectées ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agent.vrp@example.com",
+        "toEmail": "responsable.logistique@example.com",
+        "subject": "={{ $('Construire le rapport').item.json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $('Construire le rapport').item.json.html }}",
+        "options": {
+          "attachments": "carte"
+        }
+      },
+      "id": "n10",
+      "name": "E-mail : résultats OK",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "agent.vrp@example.com",
+        "toEmail": "responsable.logistique@example.com",
+        "subject": "={{ $('Construire le rapport').item.json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $('Construire le rapport').item.json.html }}",
+        "options": {
+          "attachments": "carte"
+        }
+      },
+      "id": "n11",
+      "name": "E-mail : ALERTE contraintes",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "width": 760,
+        "height": 260,
+        "content": "## Agent IA logistique - VRPTW\n1. Paramètres (véhicules, capacité, priorités)\n2. POST /solve -> API Python (OR-Tools) : matrice des distances, optimisation, contrôle des contraintes, carte\n3. Rapport HTML + JSON sauvegardé\n4. Carte PNG téléchargée et stockée\n5. E-mail OK ou ALERTE selon le respect des contraintes\n\nAvant de lancer : `python api.py`. Configurer l'identifiant SMTP dans les nœuds e-mail."
+      },
+      "id": "n12",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -120
+      ]
+    }
+  ],
+  "connections": {
+    "Démarrage manuel": {
+      "main": [
+        [
+          {
+            "node": "Paramètres du problème",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaque jour à 06h00": {
+      "main": [
+        [
+          {
+            "node": "Paramètres du problème",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paramètres du problème": {
+      "main": [
+        [
+          {
+            "node": "Lancer le solveur VRP (Python/OR-Tools)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lancer le solveur VRP (Python/OR-Tools)": {
+      "main": [
+        [
+          {
+            "node": "Construire le rapport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construire le rapport": {
+      "main": [
+        [
+          {
+            "node": "Télécharger la carte des tournées",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sauvegarder le JSON des résultats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Télécharger la carte des tournées": {
+      "main": [
+        [
+          {
+            "node": "Sauvegarder la carte (PNG)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Contraintes respectées ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contraintes respectées ?": {
+      "main": [
+        [
+          {
+            "node": "E-mail : résultats OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E-mail : ALERTE contraintes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
