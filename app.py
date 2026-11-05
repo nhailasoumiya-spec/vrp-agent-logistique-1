@@ -70,7 +70,7 @@ if run:
     } for r in res["routes"]]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-           import os; os.makedirs("output", exist_ok=True)
+  import os; os.makedirs("output", exist_ok=True)
   path = plot_routes(res, clients, "output/carte_tournees.png")
     st.image(path, use_container_width=True)
 
