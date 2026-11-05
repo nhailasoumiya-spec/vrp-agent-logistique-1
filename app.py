@@ -3,11 +3,15 @@
 Application Streamlit - Agent IA logistique (VRPTW)
 Lancer :  streamlit run app.py
 """
+import os
+
 import pandas as pd
 import streamlit as st
 
 from vrp_solver import (DEFAULT_DATA, distance_matrix, format_report, load_clients,
                         plot_routes, solve)
+
+os.makedirs("output", exist_ok=True)
 
 st.set_page_config(page_title="Agent IA VRP - VPR Logistics", layout="wide")
 st.title("🚚 Agent IA logistique — Optimisation de tournées (VRPTW)")
@@ -26,6 +30,7 @@ with st.sidebar:
                          help="0 = priorités ignorées (distance pure). Plus c'est grand, plus les clients urgents sont servis tôt.")
     use_tw = st.checkbox("Respecter les fenêtres horaires", True)
     tlim = st.slider("Temps de recherche (s)", 2, 60, 10)
+
     run = st.button("▶ Lancer l'optimisation", type="primary", use_container_width=True)
 
 # ---------------- Données (éditables) ----------------
@@ -59,6 +64,7 @@ if run:
     ok = res["controles"]["toutes_contraintes_ok"]
     c4.metric("Contraintes", "✅ respectées" if ok else "⚠ violées")
 
+
     st.subheader("Tournées optimisées")
     rows = [{
         "Véhicule": r["vehicule"],
@@ -70,8 +76,7 @@ if run:
     } for r in res["routes"]]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-  import os; os.makedirs("output", exist_ok=True)
-  path = plot_routes(res, clients, "output/carte_tournees.png")
+    path = plot_routes(res, clients, "output/carte_tournees.png")
     st.image(path, use_container_width=True)
 
     st.subheader("Contrôle des contraintes")
